@@ -141,7 +141,7 @@ Which led me to my next search:
 
 Now we have a list of all commands sent.
 
-![Commands](./commands.jpeg)
+![Commands](./commands.png)
 
 ### How commands were executed?
 
