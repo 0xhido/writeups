@@ -96,8 +96,8 @@ function decode_output($data)
 
 function read_requests()
 {
-    $requests = fopen("requests.txt", "r") or die("Unable to open file");
-    $requests_data = fread($requests, filesize("requests.txt"));
+    $requests = fopen("./splunk_records/requests.txt", "r") or die("Unable to open file");
+    $requests_data = fread($requests, filesize("./splunk_records/requests.txt"));
 
     $requests_array = explode("\n", $requests_data);
     foreach ($requests_array as &$request) {
@@ -113,8 +113,8 @@ function read_requests()
 
 function read_outputs()
 {
-    $outputs = fopen("outputs.txt", "r") or die("Unable to open file");
-    $outputs_data = fread($outputs, filesize("outputs.txt"));
+    $outputs = fopen("./splunk_records/outputs.txt", "r") or die("Unable to open file");
+    $outputs_data = fread($outputs, filesize("./splunk_records/outputs.txt"));
 
     $outputs_array = explode("\n", $outputs_data);
     foreach ($outputs_array as &$output) {
@@ -126,8 +126,8 @@ function read_outputs()
 
 function main()
 {
-    $com_out_file = fopen("req_and_out.txt", "r") or die("Unable to open file");
-    $com_out_data = fread($com_out_file, filesize("req_and_out.txt"));
+    $com_out_file = fopen("./splunk_records/req_and_out.txt", "r") or die("Unable to open file");
+    $com_out_data = fread($com_out_file, filesize("./splunk_records/req_and_out.txt"));
 
     $com_out_array = explode("\n", $com_out_data);
     foreach ($com_out_array as &$com_out) {
