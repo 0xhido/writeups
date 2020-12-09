@@ -1,10 +1,24 @@
+# Shirbit Backdoor Analysis
+
+This blog post will cover the functionality of the dropper used in the [resent breach](https://www.timesofisrael.com/hackers-breach-israeli-insurance-company-steal-client-data/).
+
+I focused on the malware's capabilities and communication protocols, in future post I'll cover how we could identify and prevent such threat.
+
+I divided the post to the following sections:
+
+- [Installation](#-installation) - the malware's first execution
+- [Functionality](#-backdoor-functionality) - what are  commands the malware supports
+- [Communication protocol](#-communication-protocol) - how the malware communicates with the server
+- [Configurations](#-configurations)
+- IoCs
 
 ## Installation
----
 
-The malware installed as a service and **waits for 200*1000 ~ 200*3000 milliseconds** before execution.
+The malware needs to be installed as a service on the system. 
 
-Once started, the malware **checks if it already ran on the system** by checking if the registry key, `SOFTWARE\\Microsoft\\Default`, equals to `140`.
+Once it installed, it waits for random time (200 - 600 seconds) before  execution.
+
+Once started, the malware checks if it already ran on the system by checking if the registry key, `SOFTWARE\\Microsoft\\Default`, equals to `140`.
 
 If its the first run, it **installed itself by setting 2 registry keys**: 
 
@@ -72,11 +86,28 @@ public struct RegisterModel
 The information sent to the attacker for registration, the C&C server responses with `NodeId` for that client. Same as before, the malware won't continue it execution without getting `NodeId`.
 
 ## Backdoor Functionality
+
+Finished with client registration, the malwares is now ready to execute commands from sent by the server.
+
+The malware supports the following commands:
+
+|Name|Type|Request|Response|
+|----|----|-------|--------|
+|[Update relay list](#update-relay-list)|2|new relay list|TODO|
+|[Get system information](#get-system-info)|3|-|collected system information|
+|[Update malware's engine](#update-malwares-engine)|6|new executable|TODO|
+|[Self deletion](#self-deletion)|7|-|TODO|
+|[Sleep](#sleep)|8|-|TODO|
+|[Get engine version](#get-engine-version)|11|-|engine version|
+|[Download and start new executable](#download-and-start-new-executable)|12|name, hash, content|TODO|
+|[Download and start executable from url](#download-and-start-executable-from-url)|13|name, hash, url|TODO|
+|[File uploading](#file-uploading)|15|path|file in path|
+|[Update configuration](#update-configuration)|16|name, hash, value|TODO|
+|[Get process ID](#get-process-id)|17|-|process ID|
+
 ---
 
-Once the client registered, the attacker starts sending commands through it C&C server.
-
-**Update relay list**
+### Update relay list
 *Command type: 2*  
 *Payload: `relays_array`*  
 
@@ -84,7 +115,7 @@ The malware checks each address inside `relays_array`. The check preformed by se
 
 Finally, it encrypts the array and update the configuration file.
 
-**Get system info**  
+### Get system info  
 *Command type: 3*  
 *Payload: -*  
 
@@ -98,7 +129,7 @@ Sends the following data to the server (using WMI):
 - Processor Architecture - `Win32_Processor.AddressWidth`
 - Is it laptop? - if `Win32_Battery` exists
 
-**Update malware engine**  
+### Update malware's engine  
 *Command type: 6*  
 *Payload: `name`, `hash`, `content`*  
 
@@ -106,7 +137,7 @@ The malware create update script under `%TEMP%\\updater.bat` which responsible f
 
 After execution, the script deletes itself using `del %0` command.
 
-**Self deletion**  
+### Self deletion  
 *Command type: 7*  
 *Payload: -*  
 
@@ -120,19 +151,19 @@ First, the malware removes its registry foothold:
 
 Then, it creates removal script `%TEMP%\\remover.bat` which responsible for uninstalling the created service, remove all files with the malware name (`<name>.*`) and self deletion using `del %0` command.
 
-**Sleep**  
+### Sleep
 *Command type: 8*  
 *Payload: -*  
 
 Sleeps for `Config.Interval` seconds.
 
-**Get engine version**  
+### Get engine version  
 *Command type: 11*  
 *Payload: -* 
 
 The malware sends the current engine version (default is 2.15.5).
 
-**Download and start new executable**  
+### Download and start new executable
 *Command type: 12*  
 *Payload: `name`, `hash`, `content`* 
 
@@ -140,7 +171,7 @@ The new executable will be located inside `%TEMP%\\name`, `content` is base64 en
 
 After the new file is created inside `%TEMP%\\name`, the malware executes it and send ACK to the attacker.
 
-**Download and start executable from url**  
+### Download and start executable from url  
 *Command type: 13*  
 *Payload: `name`, `hash`, `content`*  
 
@@ -148,7 +179,7 @@ The malware creates new file: `%TEMP%\\name`. The content of the file downloaded
 
 Once, the file's downloaded, the malware executes it.
 
-**Commands execution**  
+### Commands execution  
 *Command type: 14*  
 *Payload: `command_line`* 
 
@@ -164,7 +195,7 @@ The output will be written to `stdout` which sent back to the attacker when the 
 
 *On error, `%TEMP%\VBE.exe` is deleted and replaced with a copy of `%SYSTEM32%\\WindowsPowerShell\\v1.0\\powershell.exe` (or `%SYSTEM32%\\cmd.exe` if powershell doesn't exist).*
 
-**File uploading**  
+### File uploading  
 *Command type: 15*  
 *Payload: `file_path`* 
 
@@ -179,22 +210,11 @@ FileModel fileModel = new FileModel
 };
 ```
 
-**Update configuration**  
+### Update configuration  
 *Command type: 16*  
 *Payload: `name`, `hash`, `content`* 
 
 The configuration that could be changed are: `LogEnabled` and `Interval` inside `ConfigModel` according to `name`. The new value located inside `content`.
-
-**Get process ID**  
-*Command type: 17*  
-*Payload: -* 
-
-Sends the malware process ID.
-
-
-
-## Configurations
----
 
 *Logging:*  
 When logging is enabled, the malware creates new file inside to current execution path with the name `<file_name>.lgo`. The log file contains code number, message,  function and timestamp. The logs are encrypted using `MD5(NodeId)` as encryption key.
@@ -202,8 +222,13 @@ When logging is enabled, the malware creates new file inside to current executio
 *Interval:*  
 Used when sleep command passed to the malware (`cmdType` = 8). The malware will sleep for `Config.Interval` seconds.
 
+### Get process ID  
+*Command type: 17*  
+*Payload: -* 
+
+Sends the malware process ID.
+
 ## Communication Protocol
----
 
 **Malware -> C&C Server**
 
