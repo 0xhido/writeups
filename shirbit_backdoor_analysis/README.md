@@ -9,25 +9,31 @@ I divided the post to the following sections:
 - [Installation](#-installation) - the malware's first execution
 - [Functionality](#-backdoor-functionality) - what are  commands the malware supports
 - [Communication protocol](#-communication-protocol) - how the malware communicates with the server
-- [Configurations](#-configurations)
 - IoCs
 
 ## Installation
 
-The malware needs to be installed as a service on the system. 
+The malware needs to be installed as a service using .NET `InstallUtils.exe` and started using `net start "IPsec Helper"`.
 
-Once it installed, it waits for random time (200 - 600 seconds) before  execution.
+![service](images/new_service.png)
 
-Once started, the malware checks if it already ran on the system by checking if the registry key, `SOFTWARE\\Microsoft\\Default`, equals to `140`.
+Once it installed, the malware:
 
-If its the first run, it **installed itself by setting 2 registry keys**: 
+- Sleeps for 200 - 600 seconds
+- Saves the current execution path inside `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
+- Sets install flag for next executions inside `SOFTWARE\\Microsoft\\Default` (value = 140)
+- Creates configuration file [#](#configuration-file)
+- Checks for internet connection [#](#internet-connection)
+- Sends registration request to the server [#](#registration-process)
+- Waits for commands
 
-- Saving the current execution path inside: `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
-- Setting installation flag for next execution (`SOFTWARE\\Microsoft\\Default = 140`)
+### Configuration file
 
-Next, the malware creates configuration file and save its current path under, `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`.
+The configuration file created inside the current execution path with the same name of the executable but `.dat` extension (`service.bat`) or inside the path specified in `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`.
 
-The default configurations are:
+![conf-reg](images/conf_reg.png)
+
+The default configurations stored in the resources are:
 
 ```json
 {
@@ -38,9 +44,9 @@ The default configurations are:
     "Interval":10,
     "Relays":
         [
-            "http:\\\\5.2.73.67\\Panel\\new\\File\\css\\boot.php", 
-            "http:\\\\185.142.98.32\\Scripts\\_Data\\25\\lastupdate.php",
-            "http:\\\\185.142.97.81\\css\\v1\\template\\main.php"
+            "http:\\5.2.73.67\Panel\new\File\css\boot.php", 
+            "http:\\185.142.98.32\Scripts\_Data\25\lastupdate.php",
+            "http:\\185.142.97.81\css\v1\template\main.php"
         ], 
     "DeviceIdSalt":"k+xpGkuWOF5JRREJudQkd3tU6F+rzW24BEaryEl70WH3YUKTM1FxELCie7Xbpg82y4UrjPWh5zkKmMXWF5hU4g==",
     "PublicKeyToken":"e5VtH3ptjMofUBfncDnwUpzYqLB\\/Z+3DOpVUw7n8Mr4=",
@@ -48,48 +54,61 @@ The default configurations are:
     "servers":[]
 }
 ```
+
+*Logging:*  
+When logging is enabled, the malware creates new file inside to current execution path with the name `<file_name>.lgo`. The log file contains code number, message,  function and timestamp. The logs are encrypted using `MD5(NodeId)` as encryption key.
+
+*Interval:*  
+Used when sleep command passed to the malware (`cmdType` = 8). The malware will sleep for `Config.Interval` seconds.
+
+*Relays:*   
+The C&C server which the malware fetches new commands from. The addresses saved encrypted on disk using Rijndael symmetric encryption and `EmbedId` as key.
+
+![relays](images/relays_encrypted.png)
+
 The malware uses the `EmbedId` as encryption key and encrypts the `Relays` and write the configuration file on disk.
 
-Checks for internet connection by sending requests to `servers` defined inside the configuration file or default list of servers:
+### Internet connection
+
+Internet connection is checked by sending requests to `servers` defined inside the configuration file or default list of servers:
 
 - hxxp://windowsupdate.microsoft.com
 - hxxp://windowsupdate.microsoft.nsatc.net
 - hxxp://download.windowsupdate.com
 - hxxp://download.microsoft.com
 
-The malware:
+With that, the malware:
 
 1. Picks random server
 2. Checks if it needs to use proxy server
 
   - The proxy ip decrypted from `EmbedId` using `PublicKeyToken`
-  - The proxy port encrypted from `EmbedId` using `SessionKey`
+  - The proxy port decrypted from `EmbedId` using `SessionKey`
 
 3. Sends message to the server
 4. If there's not response from the server the malware waits random time (30~40, 30~80, 30~160, 30~320, 30~640 seconds) and tries again. 
 
 **Note:** The malware waits for internet connection and won't continue it execution without it.
 
-The malware reads the `NodeId` from `Software\\Microsoft\\Windows\\CurrentVersion\\EyeD` if it is not exists it creates it by filling the following structure using WMI queries:
+### Registration process
 
-```cs
-public struct RegisterModel
-{
-    public string version; // 2.15.5
-    public string os; // Win32_OperatingSystem.Caption,Version
-    public string identifier; // Win32_Processor
-    public string embedid;  // inside configuration file
-    public string ostype; // Win32_OperatingSystem.ProductType
-}
-```
+Now that all checks done, the malware needs to register itself. The malware sends to the server data about the client: 
+
+- `version` 
+- `os` - Win32_OperatingSystem.Caption,Version
+- `identifier` - Win32_Processor
+- `embedid`
+- `ostype` - Win32_OperatingSystem.ProductType
+
+I listed the WMI classes used for retrieving the data.
 
 The information sent to the attacker for registration, the C&C server responses with `NodeId` for that client. Same as before, the malware won't continue it execution without getting `NodeId`.
 
 ## Backdoor Functionality
 
-Finished with client registration, the malwares is now ready to execute commands from sent by the server.
+Finished with client registration, the malware is ready for executing commands from sent by the server.
 
-The malware supports the following commands:
+Supported remote commands listed below:
 
 |Name|Type|Request|Response|
 |----|----|-------|--------|
@@ -216,12 +235,6 @@ FileModel fileModel = new FileModel
 
 The configuration that could be changed are: `LogEnabled` and `Interval` inside `ConfigModel` according to `name`. The new value located inside `content`.
 
-*Logging:*  
-When logging is enabled, the malware creates new file inside to current execution path with the name `<file_name>.lgo`. The log file contains code number, message,  function and timestamp. The logs are encrypted using `MD5(NodeId)` as encryption key.
-
-*Interval:*  
-Used when sleep command passed to the malware (`cmdType` = 8). The malware will sleep for `Config.Interval` seconds.
-
 ### Get process ID  
 *Command type: 17*  
 *Payload: -* 
@@ -230,42 +243,44 @@ Sends the malware process ID.
 
 ## Communication Protocol
 
-**Malware -> C&C Server**
+The communication between the client and the server preformed over HTTP with the following headers:
 
-The message fields are:
+- Method: POST  
+- UserAgent: `Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; EmbeddedWB 14.52 from: http://www.google.com/ EmbeddedWB 14.52;\r\n .NET CLR 1.1.4322; .NET CLR 2.0.50727; InfoPath.1; .NET CLR 1.0.3705; .NET CLR 3.0.04506.30)`
+- Referrer: `https://www.google.com/`
+- ContentType: `application/x-www-form-urlencoded`
 
-- `NodeId`
-- `MessageId`
-- `Payload`
-- `CommandType`
+Each messages could sent using a proxy server (according to the configurations).
 
-The message payload encrypted with `MD5(MessageIdString)` as encryption key.
+### Message data
 
-Messages sent to given relay address of to one of the `Relays` inside to configuration file.
+The messages are Base64 encoded with the following data:
 
-*Message types:*
+```json
+{
+    "NodeId": 0,
+    "MessageId": 0,
+    "Payload": "<encrypted>",
+    "CommandType": "0"
+}
+```
 
-- 0 - Register new client
-- 1 - Get command
-- 4 - Command ACK / command output
-- 9 - CRC Error
-- 10 - Operation failed
-- 11 - Engine version
-- 15 - uploaded file
-- 17 - Send process id
+The payload encrypted using `MessageId` as symmetric key for Rijndael algorithm.
 
-**C&C Server -> Malware**
+Messages sent through random relay address, with an option for using a proxy server defined inside the configuration file.
 
-The reply message fields are:
+*Server -> Client:*
 
-- `type`
-- `id`
-- `node`
-- `payload`
+When the server needs to send data to the client it uses the following fields inside the payload: `name`, `hash`, `content`.
 
-The message's payload decrypted with `MD5(MessageIdString)` as decryption key.
+The client uses those field differently based on the received `cmdType`.
 
-*Message types:*
+*Client -> Server:*  
 
-- 5 - Update `NodeId` from `payload` (response to 0)
-- 8 - No command/Command failed
+The supported response status codes are:
+
+- Ack - 4
+- CrcError - 9
+- Failed - 10
+
+*CrcError status returned for messages in which the hash of the `content` field doesn't equal to the `hash` received.*
