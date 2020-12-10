@@ -9,7 +9,7 @@ I divided the post to the following sections:
 - [Installation](#-installation) - the malware's first execution
 - [Functionality](#-backdoor-functionality) - what are  commands the malware supports
 - [Communication protocol](#-communication-protocol) - how the malware communicates with the server
-- IoCs
+- [IoCs](#iocs)
 
 ## Installation
 
@@ -44,9 +44,9 @@ The default configurations stored in the resources are:
     "Interval":10,
     "Relays":
         [
-            "http:\\5.2.73.67\Panel\new\File\css\boot.php", 
-            "http:\\185.142.98.32\Scripts\_Data\25\lastupdate.php",
-            "http:\\185.142.97.81\css\v1\template\main.php"
+            "hxxp:\\\\5.2.73.67\\Panel\\new\\File\\css\\boot.php", 
+            "hxxp:\\\\185.142.98.32\\Scripts\\_Data\\25\\lastupdate.php",
+            "hxxp:\\\\185.142.97.81\\css\\v1\\template\\main.php"
         ], 
     "DeviceIdSalt":"k+xpGkuWOF5JRREJudQkd3tU6F+rzW24BEaryEl70WH3YUKTM1FxELCie7Xbpg82y4UrjPWh5zkKmMXWF5hU4g==",
     "PublicKeyToken":"e5VtH3ptjMofUBfncDnwUpzYqLB\\/Z+3DOpVUw7n8Mr4=",
@@ -112,17 +112,18 @@ Supported remote commands listed below:
 
 |Name|Type|Request|Response|
 |----|----|-------|--------|
-|[Update relay list](#update-relay-list)|2|new relay list|TODO|
+|[Update relay list](#update-relay-list)|2|new relay list|Ack/CrcError|
 |[Get system information](#get-system-info)|3|-|collected system information|
-|[Update malware's engine](#update-malwares-engine)|6|new executable|TODO|
-|[Self deletion](#self-deletion)|7|-|TODO|
-|[Sleep](#sleep)|8|-|TODO|
+|[Update malware's engine](#update-malwares-engine)|6|new executable|Ack/Failed/CrcError|
+|[Self deletion](#self-deletion)|7|-|Ack|
+|[Sleep](#sleep)|8|-|-|
 |[Get engine version](#get-engine-version)|11|-|engine version|
-|[Download and start new executable](#download-and-start-new-executable)|12|name, hash, content|TODO|
-|[Download and start executable from url](#download-and-start-executable-from-url)|13|name, hash, url|TODO|
-|[File uploading](#file-uploading)|15|path|file in path|
-|[Update configuration](#update-configuration)|16|name, hash, value|TODO|
-|[Get process ID](#get-process-id)|17|-|process ID|
+|[Download and start new executable](#download-and-start-new-executable)|12|name, hash, content|Ack/Failed/CrcError|
+|[Download and start executable from url](#download-and-start-executable-from-url)|13|name, hash, url|Ack/Failed|
+| [Command execution](#commands-execution)|14|command line|command result/Failed|
+|[File uploading](#file-uploading)|15|path|file in path/Failed|
+|[Update configuration](#update-configuration)|16|name, hash, value|Ack/CrcError|
+|[Get process ID](#get-process-id)|17|-|process ID/Failed|
 
 ---
 
@@ -133,6 +134,20 @@ Supported remote commands listed below:
 The malware checks each address inside `relays_array`. The check preformed by sending a POST message to the relay with unique data, `chk=Test`. If more than half failed, it requests from the server to send more.
 
 Finally, it encrypts the array and update the configuration file.
+
+#### Hidden super relay
+
+If all of the relays inside `relays_array` down, the malware sends request to a super relay. This relay is hidden encrypted inside `EmbedId` using `DeviceIdSalt` as key.
+
+![super relay](images/super_relay.png)
+
+As we can see, the malware tries to connect to the super relay, if it succeed, it requests new relay list, if not it will try again for several times.
+
+If it still won't succeed, the malware restarts itself by dropping new batch script `ellink.bat` which will restart the service.
+
+Reversing the encrypted super relay, we get the address:
+
+`hxxp://whynooneistherefornoneofthem.com/about.php`
 
 ### Get system info  
 *Command type: 3*  
@@ -284,3 +299,36 @@ The supported response status codes are:
 - Failed - 10
 
 *CrcError status returned for messages in which the hash of the `content` field doesn't equal to the `hash` received.*
+
+## IoCs
+
+**Registry Keys:**
+
+- Installation flag path - `SOFTWARE\\Microsoft\\Default = 140`
+- Autorun installation - `Software\\Microsoft\\Windows\\CurrentVersion\\Run\\ipsecservice`
+- Executable location - `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
+- Config location - `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`
+- NodeId - `Software\\Microsoft\\Windows\\CurrentVersion\\EyeD`
+
+**Dropped Files:**
+
+- `<execution_path>\<exe_name>.dat`
+- `<execution_path>\<exe_name>.lgo`
+- `%TEMP%\updater.bat`
+- `%TEMP%\remover.bat`
+- `%TEMP%\ellink.bat`
+- `%TEMP%\VBE.exe`
+
+**URLs and IP Addresses:**
+
+- 5.2.73.67
+- 185.142.98.32
+- 185.142.97.81
+- `hxxp://5.2.73.67/Panel/new/File/css/boot.php`
+- `hxxp://185.142.98.32/Scripts/_Data/25/lastupdate.php`
+- `hxxp://185.142.97.81/css/v1/template/main.php`
+- `hxxp://whynooneistherefornoneofthem.com/about.php`
+
+**HTTP Artifacts:**
+
+- `Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; EmbeddedWB 14.52 from: http://www.google.com/ EmbeddedWB 14.52;\r\n .NET CLR 1.1.4322; .NET CLR 2.0.50727; InfoPath.1; .NET CLR 1.0.3705; .NET CLR 3.0.04506.30)`
