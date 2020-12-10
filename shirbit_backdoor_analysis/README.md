@@ -17,19 +17,19 @@ The malware needs to be installed as a service using .NET `InstallUtils.exe` and
 
 ![service](images/new_service.png)
 
-Once it installed, the malware:
+Once installed, the following steps occur:
 
-- Sleeps for 200 - 600 seconds
-- Saves the current execution path inside `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
-- Sets install flag for next executions inside `SOFTWARE\\Microsoft\\Default` (value = 140)
-- Creates configuration file [#](#configuration-file)
-- Checks for internet connection [#](#internet-connection)
-- Sends registration request to the server [#](#registration-process)
-- Waits for commands
+- Sleep between 200 - 600 seconds
+- Save the current execution path inside `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
+- Set install flag for next executions inside `SOFTWARE\\Microsoft\\Default` (value = 140)
+- Create configuration file [#](#configuration-file)
+- Check for internet connection [#](#internet-connection)
+- Send registration request to the server [#](#registration-process)
+- Wait for new commands
 
 ### Configuration file
 
-The configuration file created inside the current execution path with the same name of the executable but `.dat` extension (`service.bat`) or inside the path specified in `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`.
+The configuration file is created in the current execution path with the same name of the executable and `.dat` extension (`service.bat`) or inside the path specified in `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`, if exists.
 
 ![conf-reg](images/conf_reg.png)
 
@@ -55,18 +55,20 @@ The default configurations stored in the resources are:
 }
 ```
 
-*Logging:*  
-When logging is enabled, the malware creates new file inside to current execution path with the name `<file_name>.lgo`. The log file contains code number, message,  function and timestamp. The logs are encrypted using `MD5(NodeId)` as encryption key.
+*LogEnabled:*  
+When logging enabled, the malware creates new file inside the current execution path with the name and `.lgo` extension (`service.lgo`).  
+The log file contains a code number, message,  function and timestamp.  
+The logs are encrypted using `MD5(NodeId)` as encryption key.
 
 *Interval:*  
-Used when sleep command passed to the malware (`cmdType` = 8). The malware will sleep for `Config.Interval` seconds.
+This value used when the malware receives a Sleep command from the server.
 
 *Relays:*   
-The C&C server which the malware fetches new commands from. The addresses saved encrypted on disk using Rijndael symmetric encryption and `EmbedId` as key.
+The C&C servers which the malware fetches new commands from. The addresses saved encrypted on disk using Rijndael symmetric encryption and `SHA256(EmbedId)` as key.
 
 ![relays](images/relays_encrypted.png)
 
-The malware uses the `EmbedId` as encryption key and encrypts the `Relays` and write the configuration file on disk.
+The malware uses the `EmbedId` as encryption key for encrypting the `Relays`, then, it writes the configuration file on disk.
 
 ### Internet connection
 
@@ -77,40 +79,47 @@ Internet connection is checked by sending requests to `servers` defined inside t
 - hxxp://download.windowsupdate.com
 - hxxp://download.microsoft.com
 
+(*hxxp = http*)
+
 With that, the malware:
 
 1. Picks random server
-2. Checks if it needs to use proxy server
+2. Checks if `UseCache` enabled (means use proxy server)
 
-  - The proxy ip decrypted from `EmbedId` using `PublicKeyToken`
-  - The proxy port decrypted from `EmbedId` using `SessionKey`
-
+  - The proxy IP address decrypted from `PublicKeyToken` using `MD5(EmbedId)` as key
+  - The proxy port decrypted from `SessionKey` using `MD5(EmbedId)` as key
+ 
 3. Sends message to the server
-4. If there's not response from the server the malware waits random time (30~40, 30~80, 30~160, 30~320, 30~640 seconds) and tries again. 
+4. If there's not response from the server the malware waits random time (30-40, 30-80, 30-160, 30-320, 30-640 seconds) and tries again. 
 
-**Note:** The malware waits for internet connection and won't continue it execution without it.
+**Note:** The malware waits for internet connection and won't continue without it.
 
 ### Registration process
 
-Now that all checks done, the malware needs to register itself. The malware sends to the server data about the client: 
+Now that all checks done, the malware needs to register itself. The malware sends to the server the client's data:
 
 - `version` 
-- `os` - Win32_OperatingSystem.Caption,Version
-- `identifier` - Win32_Processor
+- `os` - `Win32_OperatingSystem.Caption,Version`
+- `identifier` - `Win32_Processor`
 - `embedid`
-- `ostype` - Win32_OperatingSystem.ProductType
+- `ostype` - `Win32_OperatingSystem.ProductType`
+  
+For that, the malware utilizes WMI for system information queries. 
 
-I listed the WMI classes used for retrieving the data.
+![wmi](images/wmi_queries.png)
 
-The information sent to the attacker for registration, the C&C server responses with `NodeId` for that client. Same as before, the malware won't continue it execution without getting `NodeId`.
+*Example of how the malware retrieves the computer's domain name*
+
+The information sent to the attacker which responses with `NodeId`.  
+Same as before, the malware won't continue its execution without getting `NodeId`.
 
 ## Backdoor Functionality
 
-Finished with client registration, the malware is ready for executing commands from sent by the server.
+Finished with client registration, the malware is ready for executing commands sent by the server.
 
-Supported remote commands listed below:
+The supported commands are:
 
-|Name|Type|Request|Response|
+|Command|Command Type|Request Params|Response|
 |----|----|-------|--------|
 |[Update relay list](#update-relay-list)|2|new relay list|Ack/CrcError|
 |[Get system information](#get-system-info)|3|-|collected system information|
@@ -131,29 +140,33 @@ Supported remote commands listed below:
 *Command type: 2*  
 *Payload: `relays_array`*  
 
-The malware checks each address inside `relays_array`. The check preformed by sending a POST message to the relay with unique data, `chk=Test`. If more than half failed, it requests from the server to send more.
+The malware checks each address inside `relays_array`. The check is preformed by sending a POST message to the relay with unique data, `chk=Test`. 
 
 Finally, it encrypts the array and update the configuration file.
 
+If more than half of the given `relays_array` failed to answer, it requests from the server to send more relays and sends back a list of failed relays.
+
 #### Hidden super relay
 
-If all of the relays inside `relays_array` down, the malware sends request to a super relay. This relay is hidden encrypted inside `EmbedId` using `DeviceIdSalt` as key.
+If all of the relays inside `relays_array` are down, the malware sends request to a super relay. This relay is hidden encrypted inside `DeviceIdSalt` using `MD5(EmbedId)` as key.
 
 ![super relay](images/super_relay.png)
 
-As we can see, the malware tries to connect to the super relay, if it succeed, it requests new relay list, if not it will try again for several times.
+As we can see, the malware tries to connect to the super relay, if it succeeds, it requests for new relay list, otherwise, it will try again for several times.
 
-If it still won't succeed, the malware restarts itself by dropping new batch script `ellink.bat` which will restart the service.
+After 63-84 minutes for failed attempts, the malware will restart itself by dropping new batch script `ellink.bat` which will restart the service.
 
-Reversing the encrypted super relay, we get the address:
+The address of the super relay in the default values could be decrypted with:
 
-`hxxp://whynooneistherefornoneofthem.com/about.php`
+![relay decryption](images/hidden_relay_dec.png)
 
-### Get system info  
+Which results the URL: `hxxp://whynooneistherefornoneofthem.com/about.php`.
+
+### Get system information  
 *Command type: 3*  
 *Payload: -*  
 
-Sends the following data to the server (using WMI):
+The malware collects the following data and sends it back to the server:
 
 - Domain name - `Win32_ComputerSystem.Domain`
 - Host name
@@ -167,9 +180,11 @@ Sends the following data to the server (using WMI):
 *Command type: 6*  
 *Payload: `name`, `hash`, `content`*  
 
-The malware create update script under `%TEMP%\\updater.bat` which responsible for replacing the current malware executable with the new one and restart the service.
+The malware create an update script under `%TEMP%\\updater.bat`. The script is responsible for replacing the current malware executable with the new one and restart the service.
 
 After execution, the script deletes itself using `del %0` command.
+
+![updater.bat creation](images/bat_creation.png)
 
 ### Self deletion  
 *Command type: 7*  
@@ -183,7 +198,7 @@ First, the malware removes its registry foothold:
 - Config location - `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`
 - NodeId - `Software\\Microsoft\\Windows\\CurrentVersion\\EyeD`
 
-Then, it creates removal script `%TEMP%\\remover.bat` which responsible for uninstalling the created service, remove all files with the malware name (`<name>.*`) and self deletion using `del %0` command.
+Then, it creates a removal script `%TEMP%\\remover.bat` which is responsible for uninstalling the created service, removing all related files (`service.*`) and self deletion using `del %0` command.
 
 ### Sleep
 *Command type: 8*  
@@ -201,48 +216,43 @@ The malware sends the current engine version (default is 2.15.5).
 *Command type: 12*  
 *Payload: `name`, `hash`, `content`* 
 
-The new executable will be located inside `%TEMP%\\name`, `content` is base64 encoded.
+The new executable will be located inside `%TEMP%\\name`, `content` is Base64 encoded.
 
-After the new file is created inside `%TEMP%\\name`, the malware executes it and send ACK to the attacker.
+After the new file is created inside `%TEMP%\\name`, the malware executes it and sends ACK message to the attacker.
 
-### Download and start executable from url  
+### Download and start executable from URL  
 *Command type: 13*  
 *Payload: `name`, `hash`, `content`*  
 
-The malware creates new file: `%TEMP%\\name`. The content of the file downloaded from the url located inside `base64_decode(content)`.
+The malware creates new file, `%TEMP%\\name`. The content of the file downloaded from the URL located inside `Base64Decode(content)`.
 
 Once, the file's downloaded, the malware executes it.
 
 ### Commands execution  
 *Command type: 14*  
-*Payload: `command_line`* 
+*Payload: `CommandLine`* 
 
-Command execution could preform using 3 processes: 
+Command will be executed using the following parents: 
 
-- `%TEMP%\VBE.exe` - If the file exists 
-- `powershell.exe` - If `HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\PowerShell\\1\\Install` exists (which means the powershell available)
+- `%TEMP%\VBE.exe` - If it exists
+- `powershell.exe` - If `HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\PowerShell\\1\\Install` exists (which means the PowerShell is available)
 - `cmd.exe` - If none of the above found
 
-The new process will start with as `ProcessWindowStyle.Hidden` and the command-line: `<VBE|powershell|cmd> /C <command_line>`.
+The new process will start with `ProcessWindowStyle.Hidden` flag.
 
-The output will be written to `stdout` which sent back to the attacker when the new process terminated.
+The output will be written to `stdout` which will be sent back to the attacker when the new process terminates.
 
-*On error, `%TEMP%\VBE.exe` is deleted and replaced with a copy of `%SYSTEM32%\\WindowsPowerShell\\v1.0\\powershell.exe` (or `%SYSTEM32%\\cmd.exe` if powershell doesn't exist).*
+*On error, `%TEMP%\VBE.exe` will be deleted and replaced with a copy of `%SYSTEM32%\\WindowsPowerShell\\v1.0\\powershell.exe` (or `%SYSTEM32%\\cmd.exe` if PowerShell doesn't exist).*
 
 ### File uploading  
 *Command type: 15*  
-*Payload: `file_path`* 
+*Payload: `FilePath`* 
 
-The function sends to the attacker a file according to the `file_path`. The file's data is base64 encoded. The returned payload is:
+The function sends to the attacker the file located in `FilePath`. The file's data is Base64 encoded. The returned payload is:
 
-```cs
-FileModel fileModel = new FileModel
-{
-    name = Path.GetFileName(payload),
-    hash = PublicFunction.FileMd5Hashing(payload),
-    content = EncodingClass.Base64ByteEncoding(plainData)
-};
-```
+- `name` - the name of the file (`FilePath`)
+- `hash` - MD5 hash of the file's content
+- `content` - the content Base64 encoded
 
 ### Update configuration  
 *Command type: 16*  
@@ -254,7 +264,7 @@ The configuration that could be changed are: `LogEnabled` and `Interval` inside 
 *Command type: 17*  
 *Payload: -* 
 
-Sends the malware process ID.
+Sends the malware's process ID.
 
 ## Communication Protocol
 
@@ -265,30 +275,24 @@ The communication between the client and the server preformed over HTTP with the
 - Referrer: `https://www.google.com/`
 - ContentType: `application/x-www-form-urlencoded`
 
-Each messages could sent using a proxy server (according to the configurations).
+Messages sent through random relay address, with an option for using a proxy server defined inside the configuration file.
 
 ### Message data
 
 The messages are Base64 encoded with the following data:
 
-```json
-{
-    "NodeId": 0,
-    "MessageId": 0,
-    "Payload": "<encrypted>",
-    "CommandType": "0"
-}
-```
+- `NodeId`
+- `MessageId`
+- `Payload`
+- `CommandType`
 
-The payload encrypted using `MessageId` as symmetric key for Rijndael algorithm.
-
-Messages sent through random relay address, with an option for using a proxy server defined inside the configuration file.
+The payload is encrypted using `MD5(MessageId)` as symmetric key for Rijndael algorithm.
 
 *Server -> Client:*
 
 When the server needs to send data to the client it uses the following fields inside the payload: `name`, `hash`, `content`.
 
-The client uses those field differently based on the received `cmdType`.
+As shown earlier, the client uses those field differently based on the received `cmdType`.
 
 *Client -> Server:*  
 
@@ -304,11 +308,11 @@ The supported response status codes are:
 
 **Registry Keys:**
 
-- Installation flag path - `SOFTWARE\\Microsoft\\Default = 140`
-- Autorun installation - `Software\\Microsoft\\Windows\\CurrentVersion\\Run\\ipsecservice`
-- Executable location - `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
-- Config location - `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`
-- NodeId - `Software\\Microsoft\\Windows\\CurrentVersion\\EyeD`
+- `SOFTWARE\\Microsoft\\Default = 140`
+- `Software\\Microsoft\\Windows\\CurrentVersion\\Run\\ipsecservice`
+- `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Signature`
+- `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Updater`
+- `Software\\Microsoft\\Windows\\CurrentVersion\\EyeD`
 
 **Dropped Files:**
 
@@ -332,3 +336,9 @@ The supported response status codes are:
 **HTTP Artifacts:**
 
 - `Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; EmbeddedWB 14.52 from: http://www.google.com/ EmbeddedWB 14.52;\r\n .NET CLR 1.1.4322; .NET CLR 2.0.50727; InfoPath.1; .NET CLR 1.0.3705; .NET CLR 3.0.04506.30)`
+
+## Conclusions
+
+We now understand what capabilities the attacker had while preforming the attack. We also found out what communication protocol and encryption algorithms been used.
+
+With that knowledge and the appropriate logs we could decrypt the attacker's actions and find out what commands they executed? what executable should we investigate next? and what files were stolen?
