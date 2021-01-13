@@ -167,7 +167,7 @@ new_socket = accept(socket, 0, 0);
 closesocket(socket); // close listening socket
 ```
 
-### Getting a shell
+### Shell setup
 
 After creating a socket the shellcode create a shell to the infected system using the following code:
 
@@ -175,3 +175,20 @@ After creating a socket the shellcode create a shell to the infected system usin
 
 It creates new cmd.exe process and sets the input, output and error streams to be the socket created earlier. That way, the attacker could run commands from the other end of the socket.
 
+At the end, the shellcode waits until the shell closes and exit the program:
+
+![](images/ending.png)
+
+It chooses the appropriate exit function by querying the system's version.
+
+## Analysis of other shellcodes
+
+Now that we have good understanding about how `windows/shell_bind_tcp` works under the hood it will be easier for us to investigate other types of shellcodes, for example `windows/shell_reverse_tcp`. The main difference between the two is the way that the socket being created:
+
+![](images/reverse_tcp_socket.png)
+
+# Conclusion
+
+We've learned about 2 different shellcode produced by Metasploit framework, `windows/shell_bind_tcp` and `windows/shell_reverse_tcp`. We started by understanding the functions obfuscation and execution using python/x64dbg, then, we investigated how the socket is being created and lastly how we get a command shell on the infected system.
+
+How you found this blog post informative, see you in the next time :)
