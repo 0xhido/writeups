@@ -117,7 +117,7 @@ The malware support wide range of commands, the majority of them are self-explan
 
 | Command  | Description |
 | :------ | :---------- |  
-| ll       | Register new user                | 
+| ll       | Registers the infected system on the server                | 
 | inf      | Sends current configuration      |
 | nwpr     | Creates new process              | 
 | site     | Sends "site" to the server       | 
