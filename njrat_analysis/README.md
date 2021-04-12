@@ -142,7 +142,7 @@ The malware support wide range of commands, the majority of them are self-explan
 | sendmusicplay | Writes a music file to disk and plays it in the background | 
 | OpenSite | Starts a new process | 
 | dos | Sends "dos" to the server | 
-| udp | Sends "udp" to the server and sends UDP empty 4Kb buffer to IP address, port and delay controlled by the user |
+| udp | Sends "udp" to the server and sends UDP empty 4KB buffer to IP address, port and delay controlled by the attacker |
 | udpstp   | Stops UDP packets   |
 | pingstop | Stops PING.exe task |
 | ll       | Tells the malware to re-initialize connection |
